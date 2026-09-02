@@ -1,0 +1,65 @@
+# ============================================================
+#  MuseTalk 数字人口型同步 — 独立项目 Docker Compose
+# ============================================================
+#  启动: docker compose up -d   （或双击 启动.bat / start.bat）
+#  停止: docker compose stop    （或双击 关闭.bat / stop.bat）
+#  端口: 5000
+#  说明: MuseTalk 数字人口型同步服务（独立部署）。
+#        容器镜像 musetalk-platform-full 不随本仓库分发，首次使用前需先
+#        下载 image.tar 并 docker load 导入（见 README「大件资源下载」）。
+#        网络 digital-human-net：若本机已有同名网络则复用，否则自动创建，
+#        便于与其他容器服务互通。
+# ============================================================
+
+services:
+
+  musetalk:
+    image: musetalk-platform-full
+    container_name: musetalk
+    ports:
+      - "5000:5000"
+    volumes:
+      # API 代码 — 修改后重启容器即可生效
+      - ./code/muse_api.py:/app/main.py:ro
+      - ./code/blending_configurable.py:/app/musetalk_original/musetalk/utils/blending.py:ro
+      # Web 前端
+      - ./static/index.html:/app/static/index.html:ro
+      # 缓存 (HuggingFace + PyTorch + 预处理缓存)
+      - ./cache/huggingface_cache:/root/.cache/huggingface
+      - ./cache/torch_cache:/app/checkpoints/torch_cache
+      - ./cache/preprocess:/app/cache_preprocess
+      # 数据目录
+      - ./input:/app/input
+      # API 输出目录是 /app/outputs（带 s），让结果直接落盘宿主机
+      - ./output:/app/outputs
+      - ./data:/app/data
+      # 素材目录（可选）：网页端「服务器文件」会扫描 /app/materials。
+      # 需要时在项目根目录新建 ./materials 并放入视频/音频，再取消下一行注释：
+      # - ./materials:/app/materials
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - HF_ENDPOINT=https://hf-mirror.com
+      - PYTHONUNBUFFERED=1
+      - TORCH_HOME=/app/checkpoints/torch_cache
+      - HF_HOME=/root/.cache/huggingface
+      - CUDA_VISIBLE_DEVICES=0
+      - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: "no"
+    networks:
+      - digital-human-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+networks:
+  digital-human-net:
+    name: digital-human-net

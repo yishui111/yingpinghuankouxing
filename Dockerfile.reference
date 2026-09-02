@@ -1,0 +1,62 @@
+# ============================================================
+#  MuseTalk Dockerfile（参考）
+#  此文件仅用于文档参考，重建镜像用。
+#  当前平台使用预构建的 image.tar，无需重新构建。
+# ============================================================
+
+FROM nvidia/cuda:12.6.2-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV TORCH_HOME=/app/checkpoints/torch_cache
+ENV HF_HOME=/root/.cache/huggingface
+
+# 系统依赖
+RUN apt-get update && apt-get install -y \
+    python3 python3-pip python3-dev \
+    ffmpeg libgl1-mesa-glx libglib2.0-0 libsndfile1 \
+    wget curl git \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -s /usr/bin/python3 /usr/bin/python
+
+WORKDIR /app
+
+# PyTorch
+RUN pip3 install --no-cache-dir \
+    torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 \
+    --index-url https://download.pytorch.org/whl/cu121
+
+# Python 依赖
+RUN pip3 install --no-cache-dir \
+    flask==3.1.0 \
+    opencv-python==4.9.0.80 \
+    numpy==1.26.4 \
+    tqdm==4.67.1 \
+    omegaconf==2.3.0 \
+    scipy==1.15.2 \
+    scikit-image==0.25.2 \
+    Pillow==11.2.1 \
+    python-speech-features==0.6 \
+    easydict==1.13 \
+    einops==0.8.1 \
+    face-alignment==1.4.1 \
+    kornia==0.8.1 \
+    transformers==4.51.3 \
+    accelerate==1.6.0 \
+    av==14.2.0 \
+    librosa==0.10.2.post1 \
+    resampy==0.4.3 \
+    soundfile==0.13.1 \
+    matplotlib==3.10.1 \
+    tensorboard==2.19.0 \
+    mmcv==2.2.0 \
+    mmdet==3.3.0 \
+    mmpose==1.4.0 \
+    && pip3 install --no-cache-dir git+https://github.com/openai/whisper.git
+
+# MuseTalk 原始代码 + 模型
+COPY musetalk_original/ /app/musetalk_original/
+
+EXPOSE 5000
+
+CMD ["python3", "main.py"]
