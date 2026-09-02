@@ -20,3 +20,9 @@ image.tar(16.9GB)、cache/(10.4GB)、output/(1.08GB)、input/（真人素材+Mus
 ## 4. 维护约定
 - Windows: start.bat/stop.bat/status.bat；Linux/macOS: start.sh/stop.sh/status.sh（均有 ~%dp0 相对定位/自动开浏览器）
 - 新增功能后同步 README/DEPLOY/本文件；提交 `git push origin main`；中文 UTF-8、bat 纯 ASCII+CRLF+无 BOM
+---
+### 关键点（2026-09-02 上传整理补充）
+- 容器 musetalk 端口 5000：code/muse_api.py(Flask 自研) + static/index.html 控制台；引擎与模型全部在镜像内
+- image.tar(16.9GB) 不入库 → 需外部渠道（网盘/母版复制），start.bat 检测到会自动 docker load；Dockerfile 依赖私有基础镜像 musetalk-api-fixed-librosa（自建走 Dockerfile.reference）
+- input/（真人素材）、cache/(10.4GB)、output/(1.08GB) 不入库
+- 需 NVIDIA GPU（约 2.2GB 显存）；docs/ 四篇方案已脱敏；轻量口型驱动方案.md 为未实现方案
