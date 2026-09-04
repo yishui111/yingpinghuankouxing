@@ -9,7 +9,7 @@
 | 组件 | 说明 |
 | ---- | ---- |
 | code/ | 自研服务与混合逻辑 + requirements.txt |
-| static/index.html | Web 控制台（极速/精修/自定义三档、任务进度/取消、v1/v1.5 双模型） |
+| static/index.html | Web 控制台（极速/精修/极速对话/自定义四档、上传进度、任务进度/取消/清空记录、缓存清理、v1/v1.5 双模型） |
 | tests/smoke_test.bat | 冒烟测试 |
 | docker-compose.yml / Dockerfile | 容器入口（start.bat 首次运行自动 `docker load image.tar`） |
 | docs/ | 脱敏后的方案/日志文档 |
@@ -26,3 +26,11 @@ image.tar(16.9GB)、cache/(10.4GB)、output/(1.08GB)、input/（真人素材+Mus
 - image.tar(16.9GB) 不入库 → 需外部渠道（网盘/母版复制），start.bat 检测到会自动 docker load；Dockerfile 依赖私有基础镜像 musetalk-api-fixed-librosa（自建走 Dockerfile.reference）
 - input/（真人素材）、cache/(10.4GB)、output/(1.08GB) 不入库
 - 需 NVIDIA GPU（约 2.2GB 显存）；docs/ 四篇方案已脱敏；轻量口型驱动方案.md 为未实现方案
+
+### 关键点（2026-09-05 优化补充）
+- GPU 串行：muse_api.py 用 `_gpu_slot` 信号量排队，同一时刻只跑一个任务；`/api/reload` 有任务进行时返回 409
+- ffmpeg 全部走 subprocess 列表参数（`_run_ffmpeg`），路径带空格/中文安全；二次封装 `-c:v copy` 零转码 + `+faststart`
+- 上传扩展名白名单；`video_path/audio_path` 用 realpath 限制在容器 /app 内；上传临时文件任务结束自动删
+- 新端点：`POST /api/tasks/clear`（清记录，delete_files=true 连输出一起删）、`GET /api/cache`、`POST /api/cache/clear`（cache_preprocess 管理）
+- `/api/files` 扫描 data/materials/input 三目录，含 size_mb/duration；音频长于视频时任务 info.warning 提示回环
+- 任务记录内存上限 100 条自动修剪；blending 的 `_color_match`/`_reinject_noise` 只保留 mask 限内生效版（防方框色差），高斯核尺寸钳制到图像内

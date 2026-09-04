@@ -22,6 +22,14 @@ def face_seg(image, mode="raw", fp=None):
     return seg_image
 
 
+def _blur_kernel(blur_factor, shape):
+    """高斯模糊核尺寸：按 blur_factor 计算并钳制到图像尺寸内（cv2 要求核 < 图像）。"""
+    size = min(int(blur_factor * shape[0] // 2 * 2) + 1, max(min(shape) - 1, 1))
+    if size % 2 == 0:
+        size -= 1
+    return max(size, 1)
+
+
 def get_image(image, face, face_box, upper_boundary_ratio=0.5, expand=1.5, mode="raw", fp=None, blur_factor=0.02):
     """
     Args:
@@ -50,7 +58,7 @@ def get_image(image, face, face_box, upper_boundary_ratio=0.5, expand=1.5, mode=
     modified_mask_image = Image.new('L', ori_shape, 0)
     modified_mask_image.paste(mask_image.crop((0, top_boundary, width, height)), (0, top_boundary))
 
-    blur_kernel_size = int(blur_factor * ori_shape[0] // 2 * 2) + 1
+    blur_kernel_size = _blur_kernel(blur_factor, ori_shape)
     mask_array = cv2.GaussianBlur(np.array(modified_mask_image), (blur_kernel_size, blur_kernel_size), 0)
     mask_image = Image.fromarray(mask_array)
 
@@ -137,7 +145,7 @@ def get_image_aligned(image, face, face_box, upper_boundary_ratio=0.5, expand=1.
     modified_mask_image = Image.new('L', ori_shape, 0)
     modified_mask_image.paste(mask_image.crop((0, top_boundary, width, height)), (0, top_boundary))
 
-    blur_kernel_size = int(blur_factor * ori_shape[0] // 2 * 2) + 1
+    blur_kernel_size = _blur_kernel(blur_factor, ori_shape)
     mask_array = cv2.GaussianBlur(np.array(modified_mask_image), (blur_kernel_size, blur_kernel_size), 0)
     mask_image = Image.fromarray(mask_array)
 
@@ -163,45 +171,6 @@ def get_image_aligned(image, face, face_box, upper_boundary_ratio=0.5, expand=1.
     body = np.array(body)
 
     return body[:, :, ::-1]
-
-
-def _color_match(src, ref, mask):
-    """色彩/亮度对齐：把 src 中 mask 覆盖区域的颜色分布，线性变换到与 ref 一致。
-    解决"重绘区域颜色与原视频分层"的问题。
-    """
-    src_float = src.astype(np.float32)
-    ref_float = ref.astype(np.float32)
-    mask_3 = (mask[..., None] / 255.0).astype(np.float32)
-
-    # 加权均值/方差（只统计 mask 高权重区域）
-    wsum = mask_3.sum(axis=(0, 1), keepdims=True) + 1e-6
-    src_mean = (src_float * mask_3).sum(axis=(0, 1), keepdims=True) / wsum
-    ref_mean = (ref_float * mask_3).sum(axis=(0, 1), keepdims=True) / wsum
-    src_var = ((src_float - src_mean) ** 2 * mask_3).sum(axis=(0, 1), keepdims=True) / wsum + 1e-6
-    ref_var = ((ref_float - ref_mean) ** 2 * mask_3).sum(axis=(0, 1), keepdims=True) / wsum + 1e-6
-    src_std = np.sqrt(src_var)
-    ref_std = np.sqrt(ref_var)
-
-    # 线性映射: y = (x - src_mean) * (ref_std/src_std) + ref_mean
-    scale = ref_std / src_std
-    matched = (src_float - src_mean) * scale + ref_mean
-    matched = np.clip(matched, 0, 255).astype(np.uint8)
-    return matched
-
-
-def _reinject_noise(src, ref, mask, sigma_high=3.0, sigma_low=0.8, strength=0.55):
-    """噪点重注入：从参考帧(ref)提取高频细节，叠加回 src 的 mask 区域。
-    让重绘区域拥有与原视频一致的"皮肤颗粒/噪点质感"，消除磨皮感。
-    """
-    gray_ref = cv2.cvtColor(ref, cv2.COLOR_BGR2GRAY).astype(np.float32)
-    high_ref = cv2.GaussianBlur(gray_ref, (0, 0), sigma_high) - cv2.GaussianBlur(gray_ref, (0, 0), sigma_low)
-    high_ref = np.clip(high_ref * strength, -30, 30)
-
-    mask_f = (mask[..., None] / 255.0).astype(np.float32)
-    src_float = src.astype(np.float32)
-    out = src_float + high_ref[..., None] * mask_f
-    out = np.clip(out, 0, 255).astype(np.uint8)
-    return out
 
 
 def get_image_blending(image, face, face_box, mask_array, crop_box, texture_align=True, color_match=True, noise_strength=0.55):
@@ -264,6 +233,6 @@ def get_image_prepare_material(image, face_box, upper_boundary_ratio=0.5, expand
     modified_mask_image = Image.new('L', ori_shape, 0)
     modified_mask_image.paste(mask_image.crop((0, top_boundary, width, height)), (0, top_boundary))
 
-    blur_kernel_size = int(blur_factor * ori_shape[0] // 2 * 2) + 1
+    blur_kernel_size = _blur_kernel(blur_factor, ori_shape)
     mask_array = cv2.GaussianBlur(np.array(modified_mask_image), (blur_kernel_size, blur_kernel_size), 0)
     return mask_array, crop_box

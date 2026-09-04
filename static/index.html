@@ -108,6 +108,7 @@ input[type="range"] { width:100%; margin:4px 0; accent-color:var(--accent); }
 .file-item .tag { font-size:10px; color:#fff; background:var(--text-secondary); border-radius:3px; padding:1px 5px; }
 .file-item .tag.materials { background:var(--success); }
 .file-item .tag.data { background:var(--text-secondary); }
+.file-item .tag.input { background:var(--accent); }
 
 /* API doc */
 .api-section { margin-bottom:20px; }
@@ -145,6 +146,7 @@ pre { background:#2d3436; color:#dfe6e9; padding:12px; border-radius:var(--radiu
       <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
         <button class="btn btn-sm btn-outline mode-btn active" id="modeFast" onclick="setMode('fast')">极速版</button>
         <button class="btn btn-sm btn-outline mode-btn" id="modeQuality" onclick="setMode('quality')">精修版</button>
+        <button class="btn btn-sm btn-outline mode-btn" id="modeTurbo" onclick="setMode('turbo')">极速对话</button>
         <button class="btn btn-sm btn-outline mode-btn" id="modeCustom" onclick="setMode('custom')">自定义</button>
       </div>
       <div id="modeDesc" style="font-size:11px;color:#636e72;margin-bottom:12px;padding:6px 10px;background:#f0f0ff;border-radius:4px;">
@@ -286,7 +288,11 @@ pre { background:#2d3436; color:#dfe6e9; padding:12px; border-radius:var(--radiu
 
     <!-- Task History -->
     <div class="card" style="margin-top:20px;">
-      <h2>任务列表</h2>
+      <h2>任务列表
+        <span style="flex:1;"></span>
+        <button class="btn btn-sm" style="background:#636e72;color:#fff;font-size:11px;" onclick="clearTasks()" title="清除已结束任务的记录（输出文件保留在 output/ 目录）">清空记录</button>
+        <button class="btn btn-sm" style="background:#636e72;color:#fff;font-size:11px;" onclick="clearCache()" title="清空人脸检测+VAE编码预处理缓存（可随时重建）">清理缓存</button>
+      </h2>
       <div class="task-list" id="taskList">
         <div style="color:var(--text-secondary);font-size:13px;">暂无任务</div>
       </div>
@@ -319,9 +325,9 @@ pre { background:#2d3436; color:#dfe6e9; padding:12px; border-radius:var(--radiu
 
         <h3 style="font-size:14px;margin:20px 0 12px;">素材说明</h3>
         <div style="font-size:13px;line-height:2;">
-          <div><b>服务器文件</b> — 扫描容器内素材目录 /app/materials、/app/data（挂载方式见 docker-compose.yml），点选即用，无需上传</div>
-          <div><b>上传本地</b> — 直接上传视频/音频文件到服务器再合成</div>
-          <div><b>建议</b> — 视频素材长度 ≥ 音频长度，避免画面循环重复</div>
+          <div><b>服务器文件</b> — 扫描容器内素材目录 /app/materials、/app/data、/app/input（挂载方式见 docker-compose.yml），点选即用，无需上传</div>
+          <div><b>上传本地</b> — 直接上传视频/音频文件到服务器再合成，任务结束后临时文件自动清理</div>
+          <div><b>建议</b> — 视频素材长度 ≥ 音频长度，避免画面循环重复（音频更长时任务会提示回环续播）</div>
         </div>
 
         <h3 style="font-size:14px;margin:20px 0 12px;">极速版 vs 精修版</h3>
@@ -333,6 +339,7 @@ pre { background:#2d3436; color:#dfe6e9; padding:12px; border-radius:var(--radiu
           <tr><td>extra_margin</td><td>5</td><td>15</td><td class="desc">下巴下方额外像素</td></tr>
           <tr><td>upper_boundary</td><td>35%</td><td>55%</td><td class="desc">上半脸保留比例</td></tr>
         </table>
+        <div class="api-desc">另有「极速对话」档：batch_size=16 且跳过质感统一（face parsing），适合对话/批量场景追求最快出片；多个任务同时提交会自动在 GPU 上排队串行执行。</div>
 
         <h3 style="font-size:14px;margin:20px 0 12px;">参数速查 (自定义模式)</h3>
         <table class="api-params">
@@ -369,7 +376,7 @@ pre { background:#2d3436; color:#dfe6e9; padding:12px; border-radius:var(--radiu
   -F "video=@video.mp4" \
   -F "audio=@audio.wav" \
   -F "mode=fast"</pre>
-          <div class="api-desc">模式参数 <code>mode</code> 支持三个值：<code>fast</code>（极速版）、<code>quality</code>（精修版）、<code>custom</code>（自定义）：</div>
+          <div class="api-desc">模式参数 <code>mode</code> 支持四个值：<code>fast</code>（极速版）、<code>quality</code>（精修版）、<code>turbo</code>（极速对话，跳过质感统一最快出片）、<code>custom</code>（自定义）。多个任务同时提交会自动排队串行执行：</div>
           <pre>curl -X POST http://localhost:5000/api/synthesize \
   -F "video=@video.mp4" \
   -F "audio=@audio.wav" \
@@ -412,7 +419,23 @@ pre { background:#2d3436; color:#dfe6e9; padding:12px; border-radius:var(--radiu
           <h3>7. 列出已有文件</h3>
           <div class="api-endpoint"><span class="method get">GET</span> /api/files</div>
           <pre>curl http://localhost:5000/api/files</pre>
-          <div class="api-desc">扫描 /app/materials 与 /app/data，返回视频和音频列表。</div>
+          <div class="api-desc">扫描 /app/materials、/app/data 与 /app/input，返回视频和音频列表（含大小 size_mb 与时长 duration 秒），最近放入的排前面。</div>
+        </div>
+
+        <div class="api-section">
+          <h3>8. 清空已结束任务记录</h3>
+          <div class="api-endpoint"><span class="method post">POST</span> /api/tasks/clear</div>
+          <pre>curl -X POST http://localhost:5000/api/tasks/clear -d "delete_files=true"</pre>
+          <div class="api-desc">清除完成/失败/取消的任务记录；delete_files=true 时同时删除对应 output/&lt;task_id&gt;/ 输出目录，默认仅清记录。</div>
+        </div>
+
+        <div class="api-section">
+          <h3>9. 预处理缓存管理</h3>
+          <div class="api-endpoint"><span class="method get">GET</span> /api/cache</div>
+          <div class="api-endpoint"><span class="method post">POST</span> /api/cache/clear</div>
+          <pre>curl http://localhost:5000/api/cache
+curl -X POST http://localhost:5000/api/cache/clear</pre>
+          <div class="api-desc">查看/清空人脸检测+VAE编码缓存（cache/preprocess）。缓存可随时重建，清空只影响同素材下次首次合成的速度。</div>
         </div>
       </div>
 
@@ -475,6 +498,11 @@ const PRESETS = {
     desc: 'batch_size=2 逐帧精细 | 约 10-12 分钟/250帧 | 柔滑过渡',
     params: { batch_size: 2, blur_factor: 3, extra_margin: 15, parsing_mode: 'neck', upper_boundary_ratio: 55 }
   },
+  turbo: {
+    label: '极速对话',
+    desc: 'batch_size=16 跳过质感统一 | 最快出片 | 适合对话/批量场景',
+    params: { batch_size: 16, blur_factor: 1, extra_margin: 5, parsing_mode: 'jaw', upper_boundary_ratio: 30 }
+  },
   custom: {
     label: '自定义',
     desc: '手动调整所有参数，不受预设限制',
@@ -488,7 +516,17 @@ function setMode(mode) {
   document.getElementById('mode' + mode.charAt(0).toUpperCase() + mode.slice(1)).classList.add('active');
   document.getElementById('modeDesc').textContent = PRESETS[mode].desc;
 
-  if (mode !== 'custom') {
+  if (mode === 'turbo') {
+    // 后端 turbo 预设会跳过质感统一，勾选框保持一致
+    document.getElementById('texture_align').checked = false;
+    const p = PRESETS.turbo.params;
+    for (const k of Object.keys(p)) {
+      const el = document.getElementById(k);
+      if (el) el.value = p[k];
+    }
+    updateSliderLabels();
+  } else if (mode !== 'custom') {
+    document.getElementById('texture_align').checked = true;
     const p = PRESETS[mode].params;
     const map = { batch_size: 'batch_size', blur_factor: 'blur_factor', extra_margin: 'extra_margin', parsing_mode: 'parsing_mode', upper_boundary_ratio: 'upper_boundary_ratio' };
     for (const [k, htmlId] of Object.entries(map)) {
@@ -524,6 +562,16 @@ function setAudioSrc(mode) {
   document.getElementById('audioUploadPanel').style.display = mode === 'upload' ? 'block' : 'none';
 }
 
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function fmtSize(mb) { return mb >= 1024 ? (mb / 1024).toFixed(1) + 'GB' : mb + 'MB'; }
+function fmtDur(sec) {
+  if (!sec) return '';
+  const m = Math.floor(sec / 60), s = Math.round(sec % 60);
+  return m ? `${m}分${s}秒` : `${s}秒`;
+}
+
 function renderFilePicker(containerId, list, type, selCallback) {
   const el = document.getElementById(containerId);
   if (!list.length) {
@@ -531,8 +579,10 @@ function renderFilePicker(containerId, list, type, selCallback) {
     return;
   }
   el.innerHTML = list.map(f => {
-    const tag = f.src === 'materials' ? '<span class="tag materials">素材</span>' : '<span class="tag data">data</span>';
-    return `<div class="file-item" data-path="${f.path}" onclick="${selCallback}('${f.path.replace(/'/g, "\\'")}', this)">${tag}<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${f.name}</span></div>`;
+    const tagLabel = { materials: '素材', data: 'data', input: 'input' }[f.src] || f.src;
+    const tag = `<span class="tag ${escapeHtml(f.src)}">${tagLabel}</span>`;
+    const meta = [f.size_mb ? fmtSize(f.size_mb) : '', fmtDur(f.duration)].filter(Boolean).join(' · ');
+    return `<div class="file-item" data-path="${escapeHtml(f.path)}" onclick="${selCallback}('${escapeHtml(f.path)}', this)">${tag}<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(f.name)}</span><span style="font-size:10px;color:#b2bec3;white-space:nowrap;">${meta}</span></div>`;
   }).join('');
 }
 
@@ -552,6 +602,7 @@ async function init() {
   await checkHealth();
   loadServerFiles();
   bindSliders();
+  resumeRunningTask();
 }
 
 async function checkHealth() {
@@ -562,7 +613,11 @@ async function checkHealth() {
     const txt = document.getElementById('statusText');
     if (d.model_ready) {
       dot.className = 'status-dot';
-      txt.textContent = `就绪 | GPU: ${d.gpu_mem || (d.gpu_available ? '可用' : '不可用')}`;
+      txt.textContent = `就绪 | GPU: ${d.gpu_mem || (d.gpu_available ? '可用' : '不可用')}` +
+        (d.tasks_active ? ` | 进行中 ${d.tasks_active}` : '');
+    } else if (d.status === 'error') {
+      dot.className = 'status-dot error';
+      txt.textContent = '模型异常(重载失败)';
     } else {
       dot.className = 'status-dot loading';
       txt.textContent = '模型加载中...';
@@ -629,6 +684,28 @@ function toggleCollapse(id) {
 }
 
 // ── Synthesis ──
+// XHR 提交以便展示上传进度（大视频上传是首要等待环节）
+function submitForm(form) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${API}/api/synthesize`);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) {
+        const pct = Math.round(e.loaded / e.total * 100);
+        document.getElementById('progressMsg').textContent = `上传素材中 ${pct}%`;
+        document.getElementById('progressPct').textContent = pct + '%';
+        document.getElementById('progressFill').style.width = pct + '%';
+      }
+    };
+    xhr.onload = () => {
+      try { resolve(JSON.parse(xhr.responseText)); }
+      catch (err) { reject(new Error('响应解析失败 (HTTP ' + xhr.status + ')')); }
+    };
+    xhr.onerror = () => reject(new Error('网络错误'));
+    xhr.send(form);
+  });
+}
+
 async function startSynthesis() {
   const form = new FormData();
 
@@ -674,8 +751,7 @@ async function startSynthesis() {
   document.getElementById('progressFill').style.width = '0%';
 
   try {
-    const r = await fetch(`${API}/api/synthesize`, { method: 'POST', body: form });
-    const d = await r.json();
+    const d = await submitForm(form);
     if (d.error) { alert(d.error); resetBtn(); return; }
 
     currentTaskId = d.task_id;
@@ -695,6 +771,14 @@ function pollTask() {
     try {
       const r = await fetch(`${API}/api/status/${currentTaskId}`);
       const d = await r.json();
+      if (d.error) {
+        // 任务记录被清空等情况：停止轮询，避免界面卡死
+        clearInterval(pollTimer);
+        pollTimer = null;
+        resetBtn();
+        document.getElementById('progressMsg').textContent = '任务不存在（可能已被清除）';
+        return;
+      }
       document.getElementById('progressFill').style.width = d.progress + '%';
       document.getElementById('progressPct').textContent = d.progress + '%';
       document.getElementById('progressMsg').textContent = d.message || '';
@@ -704,7 +788,8 @@ function pollTask() {
         pollTimer = null;
         document.getElementById('runBtn').textContent = '开始合成';
         document.getElementById('runBtn').disabled = false;
-        document.getElementById('progressMsg').textContent = '完成!';
+        document.getElementById('progressMsg').textContent = '完成!' +
+          (d.info && d.info.warning ? ' ⚠ ' + d.info.warning : '');
         showResult(d);
         loadTaskList();
       } else if (d.status === 'failed') {
@@ -779,6 +864,45 @@ async function cancelTask(taskId) {
     if (d.error) { alert(d.error); return; }
     loadTaskList();
   } catch(e) { alert('取消失败: ' + e.message); }
+}
+
+// ── Maintenance: clear finished task records / preprocess cache ──
+async function clearTasks() {
+  if (!confirm('清除全部已结束（完成/失败/取消）的任务记录？\n（输出视频文件仍保留在 output/ 目录）')) return;
+  try {
+    const body = new URLSearchParams({ delete_files: 'false' });
+    const r = await fetch(`${API}/api/tasks/clear`, { method: 'POST', body });
+    const d = await r.json();
+    if (d.error) { alert(d.error); return; }
+    loadTaskList();
+  } catch(e) { alert('清除失败: ' + e.message); }
+}
+
+async function clearCache() {
+  try {
+    const s = await (await fetch(`${API}/api/cache`)).json();
+    if (!confirm(`预处理缓存当前 ${s.size_mb} MB / ${s.count} 个文件。\n清理后同一素材首次合成会重新做人脸检测（变慢），确定清理？`)) return;
+    const r = await fetch(`${API}/api/cache/clear`, { method: 'POST' });
+    const d = await r.json();
+    if (d.error) { alert(d.error); return; }
+    alert(`已清理 ${d.removed} 个缓存文件`);
+  } catch(e) { alert('清理失败: ' + e.message); }
+}
+
+// ── Resume polling for a task that is still running after page reload ──
+async function resumeRunningTask() {
+  try {
+    const r = await fetch(`${API}/api/tasks`);
+    const d = await r.json();
+    const active = (d.tasks || []).find(t => t.status === 'running' || t.status === 'queued');
+    if (!active) return;
+    currentTaskId = active.task_id;
+    document.getElementById('progressArea').classList.add('active');
+    document.getElementById('resultArea').classList.remove('active');
+    document.getElementById('runBtn').disabled = true;
+    document.getElementById('runBtn').textContent = '处理中...';
+    pollTask();
+  } catch(e) {}
 }
 
 // ── Reload models (free GPU memory) ──
